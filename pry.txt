@@ -1,0 +1,40 @@
+import numpy as np
+import cv2
+from matplotlib import pyplot as plt
+
+
+img = cv2.imread('Imagenes_1-50/rm_149_004.tif',0)
+
+mean = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,11,4)
+gaussian = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,15)
+
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3));
+kernel2 = cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3));
+opening = cv2.morphologyEx(gaussian, cv2.MORPH_OPEN, kernel,10);
+closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel2);
+
+cv2.imwrite('Umbral.jpg',gaussian)
+cv2.imwrite('Open.jpg',opening)
+cv2.imwrite('Close.jpg',closing)
+
+
+
+fig_1 = plt.figure(figsize=(10,7))
+fig_1.subplots_adjust(left=0.1, right=0.9, bottom=0.1, top=0.9)
+fig_1.suptitle('Umbralización ', fontsize=16)
+
+fig_1_img = fig_1.add_subplot(231)
+fig_1_img.imshow(img,cmap='gray')
+fig_1_img.set_title('Imagen Original')
+
+fig_2_img = fig_1.add_subplot(232)
+fig_2_img.imshow(mean, cmap='gray')
+fig_2_img.set_title('Umbral adaptativo (Media)')
+
+fig_3_img = fig_1.add_subplot(233)
+fig_3_img.imshow(gaussian, cmap='gray')
+fig_3_img.set_title('Umbral adaptativo (Gaussiano)')
+
+fig_4_img = fig_1.add_subplot(234)
+fig_4_img.imshow(opening, cmap='gray')
+fig_4_img.set_title('Open)')

@@ -1,0 +1,32 @@
+import numpy as np
+import cv2
+from matplotlib import pyplot as plt
+
+#Lectura del la imágen .tif
+img = cv2.imread('Imagenes_1-50/rm_149_004.tif',0)
+#Aplicación de Threshold adaptativo
+mean = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,15,15)
+gaussian = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,15,15)
+
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3));
+kernel2 = cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3));
+#kernel3 = np.array([[2, 1, 0],
+#                   [1,  2, 1],
+#                   [0, -1, 2]])
+
+
+
+eroding = cv2.erode(gaussian,kernel2,iterations = 2)
+
+#closing = cv2.morphologyEx(eroding, cv2.MORPH_CLOSE, kernel2,1);
+
+dilation = cv2.dilate(eroding,kernel2,iterations = 2)
+
+#opening = cv2.morphologyEx(dilation, cv2.MORPH_OPEN, kernel2,1);
+
+cv2.imwrite('tests/1_UmbralMean.png',gaussian)
+cv2.imwrite('tests/1_UmbralGauss.png',gaussian)
+#cv2.imwrite('tests/2_Open.png',opening)
+#cv2.imwrite('tests/3_Close.png',closing)
+cv2.imwrite('tests/4_Erode.png',eroding)
+cv2.imwrite('tests/5_Dilate.png',dilation)
