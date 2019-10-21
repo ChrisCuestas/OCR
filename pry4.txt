@@ -1,0 +1,185 @@
+import numpy as np
+import cv2
+from matplotlib import pyplot as plt
+
+#Lectura del la imágen .tif
+img = cv2.imread('img/rm_149_004.tif',0)
+
+#Aplicación de Threshold adaptativo
+mean = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,15,15)
+gaussian = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,15,15)
+
+#Para invertir colores
+#gaussian = 255 - gaussian
+
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3));
+kernel2 = cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3));
+
+#Transformaciones morfológicas
+eroding = cv2.erode(mean,kernel2,iterations = 2)
+dilation = cv2.dilate(eroding,kernel2,iterations = 2)
+
+#Se guardan los imagenes en cada paso
+cv2.imwrite('tests/1_UmbralMean.png',gaussian)
+cv2.imwrite('tests/2_UmbralGauss.png',gaussian)
+cv2.imwrite('tests/3_Erode.png',eroding)
+cv2.imwrite('tests/4_Dilate.png',dilation)
+
+#Se obtiene el valor promedio de cada fila de pixeles de la imagen
+reduced = cv2.reduce(dilation, 1, cv2.REDUCE_AVG)
+
+#Se establece un límite para determinar si hay texto o no
+limit = np.sqrt(np.mean(reduced**2))
+print(np.mean(reduced**2))
+print(limit)
+limit = 235 #227
+
+#Algoritmo para determinar los límites de cada linea del texto
+
+#1.Creación de vector que indica la presencia o no de texto
+cnt = 0
+vector = np.zeros(len(reduced))
+for avg in reduced:
+    if avg < limit:
+        vector[cnt] = 1
+    else:
+        vector[cnt] = 0
+    cnt=cnt+1
+print(cnt)
+#2.Conteo de líneas en el texto
+lines = 0
+last = 0
+for i in range(len(vector)):
+    if last == 0:
+        if vector[i]==1:
+            lines = lines +1
+    last = vector[i]
+print(lines)
+#Creación de vector donde se guardan las filas de 
+#pixeles que dividen cada linea de texto
+start = 0
+divs = np.zeros(lines)
+last = 1
+line = 0
+for i in range(len(vector)):
+    if last == 1:
+        if vector[i]==0:
+            start = i
+    elif last == 0:
+        if vector[i]==1:
+            divs[line] = int((start+i)//2)
+            line = line+1
+    last = vector[i]
+
+#Figuras de comprobación
+plt.figure(1,figsize=(20, 10))
+
+plt.subplot(211)
+plt.plot(reduced)
+plt.subplot(212)
+plt.plot(vector)
+
+plt.figure(2,figsize=(10, 5))
+plt.plot(divs)
+
+#Algoritmo para extraer imagenes de cada una de la filas
+
+#Se establece un márgen para evitar letras cortadas(Ejemplo: Titulo)
+margin = 15
+
+#Se itera sobreover todas las lineas
+print('Segmented into %d lines'%(lines-1))
+for c in range(len(divs)-1):
+    #Se extrae la matriz de pixeles de la linea 
+    cropped = dilation[int(divs[c])-margin:int(divs[c+1])+margin, 0:1577]
+    #Se guarda la linea en archivo .png
+    cv2.imwrite('tests/lines/%d.png'%c,cropped)
+
+#Algoritmo para segmentación
+#https://github.com/githubharald/WordSegmentation.git
+import os
+import math
+
+def wordSegmentation(img, kernelSize=25, sigma=11, theta=7, minArea=0):
+    """Scale space technique for word segmentation proposed by R. Manmatha: http://ciir.cs.umass.edu/pubfiles/mm-27.pdf
+
+    Args:
+        img: grayscale uint8 image of the text-line to be segmented.
+        kernelSize: size of filter kernel, must be an odd integer.
+        sigma: standard deviation of Gaussian function used for filter kernel.
+        theta: approximated width/height ratio of words, filter function is distorted by this factor.
+        minArea: ignore word candidates smaller than specified area.
+
+    Returns:
+        List of tuples. Each tuple contains the bounding box and the image of the segmented word.
+    """
+
+    # apply filter kernel
+    kernel = createKernel(kernelSize, sigma, theta)
+    imgFiltered = cv2.filter2D(img, -1, kernel, borderType=cv2.BORDER_REPLICATE).astype(np.uint8)
+    (_, imgThres) = cv2.threshold(imgFiltered, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    imgThres = 255 - imgThres
+
+    # find connected components. OpenCV: return type differs between OpenCV2 and 3
+    if cv2.__version__.startswith('3.'):
+        (_, components, _) = cv2.findContours(imgThres, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    else:
+        (components, _) = cv2.findContours(imgThres, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    # append components to result
+    res = []
+    for c in components:
+        # skip small word candidates
+        if cv2.contourArea(c) < minArea:
+            continue
+        # append bounding box and image of word to result list
+        currBox = cv2.boundingRect(c) # returns (x, y, w, h)
+        (x, y, w, h) = currBox
+        currImg = img[y:y+h, x:x+w]
+        res.append((currBox, currImg))
+
+    # return list of words, sorted by x-coordinate
+    return sorted(res, key=lambda entry:entry[0][0])
+
+
+def createKernel(kernelSize, sigma, theta):
+    """create anisotropic filter kernel according to given parameters"""
+    assert kernelSize % 2 # must be odd size
+    halfSize = kernelSize // 2
+
+    kernel = np.zeros([kernelSize, kernelSize])
+    sigmaX = sigma
+    sigmaY = sigma * theta
+
+    for i in range(kernelSize):
+        for j in range(kernelSize):
+            x = i - halfSize
+            y = j - halfSize
+
+            expTerm = np.exp(-x**2 / (2 * sigmaX) - y**2 / (2 * sigmaY))
+            xTerm = (x**2 - sigmaX**2) / (2 * math.pi * sigmaX**5 * sigmaY)
+            yTerm = (y**2 - sigmaY**2) / (2 * math.pi * sigmaY**5 * sigmaX)
+
+            kernel[i, j] = (xTerm + yTerm) * expTerm
+
+    kernel = kernel / np.sum(kernel)
+    return kernel
+
+
+
+for k in range(lines-1):
+    if not os.path.exists('tests/line_%s/'%k):
+        os.mkdir('tests/line_%s/'%k)
+    img = cv2.imread('tests/lines/%d.png'%k,0)
+    res = wordSegmentation(img, kernelSize=11, sigma=10, theta=7, minArea=700)
+    # iterate over all segmented words
+    print('Line %s segmented into %d words'%(k,len(res)))
+    for (j, w) in enumerate(res):
+        (wordBox, wordImg) = w
+        (x, y, w, h) = wordBox
+        cv2.imwrite('tests/line_%s/%d.png'%(k,j), wordImg) # save word
+        cv2.rectangle(img,(x,y),(x+w,y+h),0,1) # draw bounding box in summary image
+    # output summary image with bounding boxes around words
+    cv2.imwrite('tests/lines_segmented/%d.png'%k, img)
+
+
